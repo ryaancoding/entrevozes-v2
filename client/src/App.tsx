@@ -11,6 +11,7 @@ import Videos from "./pages/Videos";
 import MindMaps from "./pages/MindMaps";
 import Quiz from "./pages/Quiz";
 import Admin from "./pages/Admin";
+import Login from "./pages/Login";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path={"/videos"} component={Videos} />
       <Route path={"/mindmaps"} component={MindMaps} />
       <Route path={"/quiz"} component={Quiz} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/admin"} component={Admin} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

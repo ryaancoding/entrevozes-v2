@@ -1,10 +1,11 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
+import { sdk } from "./_core/sdk";
 
 // Define status enum
 const StatusEnum = z.enum(["pending", "approved", "rejected"]);
@@ -21,6 +22,70 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+
+    login: publicProcedure
+      .input(
+        z.object({
+          email: z.string().email("E-mail inválido"),
+          password: z.string().min(1, "Senha obrigatória"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const adminEmail = process.env.ADMIN_EMAIL;
+        const adminPassword = process.env.ADMIN_PASSWORD;
+
+        if (!adminEmail || !adminPassword) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              "ADMIN_EMAIL ou ADMIN_PASSWORD não configurados no Railway.",
+          });
+        }
+
+        const emailOk =
+          input.email.trim().toLowerCase() === adminEmail.trim().toLowerCase();
+        const passwordOk = input.password === adminPassword;
+
+        if (!emailOk || !passwordOk) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "E-mail ou senha inválidos.",
+          });
+        }
+
+        await db.upsertUser({
+          openId: "local-admin",
+          name: "Administrador",
+          email: adminEmail,
+          loginMethod: "password",
+          role: "admin",
+          lastSignedIn: new Date(),
+        });
+
+        const sessionToken = await sdk.createSessionToken("local-admin", {
+          name: "Administrador",
+          expiresInMs: ONE_YEAR_MS,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+
+        ctx.res.cookie(COOKIE_NAME, sessionToken, {
+          ...cookieOptions,
+          maxAge: ONE_YEAR_MS,
+        });
+
+        const user = await db.getUserByOpenId("local-admin");
+
+        if (!user) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Não foi possível criar a sessão do administrador.",
+          });
+        }
+
+        return user;
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });

@@ -19,7 +19,7 @@ export default function Admin() {
   // Redirect if not admin
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) {
-      setLocation("/");
+      setLocation("/login");
     }
   }, [loading, user, setLocation]);
 
