@@ -24,7 +24,10 @@ export default function Admin() {
   }, [loading, user, setLocation]);
 
   // Fetch pending content
-  const { data: pending, isLoading, refetch } = trpc.moderation.getPending.useQuery();
+  const { data: pending, isLoading, refetch } = trpc.moderation.getPending.useQuery(undefined, {
+    enabled: !!user && user.role === "admin",
+    retry: false,
+  });
 
   // Mutations
   const approveArticle = trpc.articles.approve.useMutation({
@@ -122,12 +125,12 @@ export default function Admin() {
             </div>
             <div>
               <h3 className="font-semibold text-slate-900">Resumo</h3>
-              <p className="text-slate-600">{item.excerpt || "Não informado"}</p>
+              <p className="text-slate-600">{item.summary || "Não informado"}</p>
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900">Conteúdo</h3>
+              <h3 className="font-semibold text-slate-900">Link do artigo</h3>
               <div className="bg-slate-50 p-4 rounded-lg max-h-64 overflow-y-auto">
-                <p className="text-slate-600 whitespace-pre-wrap text-sm">{item.content}</p>
+                <p className="text-slate-600 whitespace-pre-wrap text-sm">{item.articleLink || "Link não informado"}</p>
               </div>
             </div>
           </div>
@@ -253,7 +256,7 @@ export default function Admin() {
     }
   };
 
-  if (loading) {
+  if (loading || (!user || user.role !== "admin")) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
@@ -337,7 +340,7 @@ export default function Admin() {
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex-1">
                           <CardTitle className="line-clamp-1">{article.title}</CardTitle>
-                          <CardDescription className="line-clamp-1">{article.excerpt}</CardDescription>
+                          <CardDescription className="line-clamp-1">{article.summary}</CardDescription>
                         </div>
                         <Badge variant="outline">Pendente</Badge>
                       </div>
