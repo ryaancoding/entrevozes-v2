@@ -22,11 +22,10 @@ function Router() {
       <Route path={"/videos"} component={Videos} />
       <Route path={"/mindmaps"} component={MindMaps} />
       <Route path={"/quiz"} component={Quiz} />
-      <Route path={"/login"} component={Login} />
       <Route path={"/enviar"} component={Submit} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/admin"} component={Admin} />
       <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );

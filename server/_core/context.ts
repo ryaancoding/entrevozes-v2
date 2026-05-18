@@ -1,9 +1,8 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import crypto from "node:crypto";
+import { COOKIE_NAME } from "@shared/const";
 import * as db from "../db";
-
-export const LOCAL_ADMIN_COOKIE_NAME = "entrevozes_admin_session";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -11,76 +10,47 @@ export type TrpcContext = {
   user: User | null;
 };
 
-function getSecret() {
-  return (
-    process.env.JWT_SECRET ||
-    process.env.ADMIN_PASSWORD ||
-    "entrevozes_local_dev_secret"
-  );
+function parseCookie(header: string | undefined, name: string) {
+  if (!header) return undefined;
+  const cookies = header.split(";").map(part => part.trim());
+  const found = cookies.find(part => part.startsWith(`${name}=`));
+  if (!found) return undefined;
+  return decodeURIComponent(found.slice(name.length + 1));
 }
 
-function signOpenId(openId: string) {
-  return crypto
-    .createHmac("sha256", getSecret())
-    .update(openId)
-    .digest("hex");
+function base64url(input: string | Buffer) {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
 }
 
-function parseCookies(cookieHeader?: string) {
-  const cookies: Record<string, string> = {};
-
-  if (!cookieHeader) {
-    return cookies;
-  }
-
-  for (const part of cookieHeader.split(";")) {
-    const [rawKey, ...rawValue] = part.trim().split("=");
-
-    if (!rawKey) {
-      continue;
-    }
-
-    cookies[rawKey] = decodeURIComponent(rawValue.join("=") || "");
-  }
-
-  return cookies;
+function signPayload(payload: string) {
+  const secret = process.env.JWT_SECRET || "entrevozes-dev-secret";
+  return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-function readLocalAdminToken(req: CreateExpressContextOptions["req"]) {
-  const cookies = parseCookies(req.headers.cookie);
-  return cookies[LOCAL_ADMIN_COOKIE_NAME] || null;
+function safeCompare(a: string, b: string) {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
 }
 
-async function authenticateLocalAdmin(
-  req: CreateExpressContextOptions["req"]
-): Promise<User | null> {
-  const token = readLocalAdminToken(req);
+function verifyLocalSessionToken(token: string) {
+  const [payloadEncoded, signature] = token.split(".");
+  if (!payloadEncoded || !signature) return null;
 
-  if (!token) {
-    return null;
-  }
+  const expected = signPayload(payloadEncoded);
+  if (!safeCompare(signature, expected)) return null;
 
-  const separatorIndex = token.lastIndexOf(".");
+  const json = Buffer.from(payloadEncoded, "base64url").toString("utf8");
+  const payload = JSON.parse(json) as { openId: string; exp: number };
 
-  if (separatorIndex <= 0) {
-    return null;
-  }
+  if (!payload.openId || !payload.exp || Date.now() > payload.exp) return null;
 
-  const openId = token.slice(0, separatorIndex);
-  const signature = token.slice(separatorIndex + 1);
-  const expectedSignature = signOpenId(openId);
-
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-
-  if (
-    signatureBuffer.length !== expectedBuffer.length ||
-    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
-  ) {
-    return null;
-  }
-
-  return db.getUserByOpenId(openId);
+  return payload;
 }
 
 export async function createContext(
@@ -89,7 +59,16 @@ export async function createContext(
   let user: User | null = null;
 
   try {
-    user = await authenticateLocalAdmin(opts.req);
+    const token =
+      opts.req.cookies?.[COOKIE_NAME] ||
+      parseCookie(opts.req.headers.cookie, COOKIE_NAME);
+
+    if (token) {
+      const payload = verifyLocalSessionToken(token);
+      if (payload?.openId) {
+        user = await db.getUserByOpenId(payload.openId);
+      }
+    }
   } catch {
     user = null;
   }
