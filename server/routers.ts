@@ -1,11 +1,12 @@
-import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { LOCAL_ADMIN_COOKIE_NAME } from "./_core/context";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import crypto from "node:crypto";
 import * as db from "./db";
-import { sdk } from "./_core/sdk";
 
 // Define status enum
 const StatusEnum = z.enum(["pending", "approved", "rejected"]);
@@ -17,6 +18,25 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+function getSecret() {
+  return (
+    process.env.JWT_SECRET ||
+    process.env.ADMIN_PASSWORD ||
+    "entrevozes_local_dev_secret"
+  );
+}
+
+function signOpenId(openId: string) {
+  return crypto
+    .createHmac("sha256", getSecret())
+    .update(openId)
+    .digest("hex");
+}
+
+function createLocalAdminToken(openId: string) {
+  return `${openId}.${signOpenId(openId)}`;
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -62,15 +82,12 @@ export const appRouter = router({
           lastSignedIn: new Date(),
         });
 
-        const sessionToken = await sdk.createSessionToken("local-admin", {
-          name: "Administrador",
-          expiresInMs: ONE_YEAR_MS,
-        });
-
+        const token = createLocalAdminToken("local-admin");
         const cookieOptions = getSessionCookieOptions(ctx.req);
 
-        ctx.res.cookie(COOKIE_NAME, sessionToken, {
+        ctx.res.cookie(LOCAL_ADMIN_COOKIE_NAME, token, {
           ...cookieOptions,
+          httpOnly: true,
           maxAge: ONE_YEAR_MS,
         });
 
@@ -88,7 +105,10 @@ export const appRouter = router({
 
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(LOCAL_ADMIN_COOKIE_NAME, {
+        ...cookieOptions,
+        maxAge: -1,
+      });
       return {
         success: true,
       } as const;

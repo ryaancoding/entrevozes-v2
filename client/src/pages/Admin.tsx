@@ -23,9 +23,11 @@ export default function Admin() {
     }
   }, [loading, user, setLocation]);
 
-  // Fetch pending content
+  const isAdmin = !!user && user.role === "admin";
+
+  // Fetch pending content only after the admin session is confirmed
   const { data: pending, isLoading, refetch } = trpc.moderation.getPending.useQuery(undefined, {
-    enabled: !!user && user.role === "admin",
+    enabled: isAdmin,
     retry: false,
   });
 
@@ -128,9 +130,9 @@ export default function Admin() {
               <p className="text-slate-600">{item.summary || "Não informado"}</p>
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900">Link do artigo</h3>
+              <h3 className="font-semibold text-slate-900">Conteúdo</h3>
               <div className="bg-slate-50 p-4 rounded-lg max-h-64 overflow-y-auto">
-                <p className="text-slate-600 whitespace-pre-wrap text-sm">{item.articleLink || "Link não informado"}</p>
+                <p className="text-slate-600 whitespace-pre-wrap text-sm">{item.articleLink || "Sem link informado"}</p>
               </div>
             </div>
           </div>
@@ -256,7 +258,7 @@ export default function Admin() {
     }
   };
 
-  if (loading || (!user || user.role !== "admin")) {
+  if (loading || (!user && !loading)) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
