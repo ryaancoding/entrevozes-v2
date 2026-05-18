@@ -1,12 +1,11 @@
-import { ONE_YEAR_MS } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
-import { LOCAL_ADMIN_COOKIE_NAME } from "./_core/context";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import crypto from "node:crypto";
 import * as db from "./db";
+import { sdk } from "./_core/sdk";
 
 // Define status enum
 const StatusEnum = z.enum(["pending", "approved", "rejected"]);
@@ -18,25 +17,6 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
-
-function getSecret() {
-  return (
-    process.env.JWT_SECRET ||
-    process.env.ADMIN_PASSWORD ||
-    "entrevozes_local_dev_secret"
-  );
-}
-
-function signOpenId(openId: string) {
-  return crypto
-    .createHmac("sha256", getSecret())
-    .update(openId)
-    .digest("hex");
-}
-
-function createLocalAdminToken(openId: string) {
-  return `${openId}.${signOpenId(openId)}`;
-}
 
 export const appRouter = router({
   system: systemRouter,
@@ -82,12 +62,15 @@ export const appRouter = router({
           lastSignedIn: new Date(),
         });
 
-        const token = createLocalAdminToken("local-admin");
+        const sessionToken = await sdk.createSessionToken("local-admin", {
+          name: "Administrador",
+          expiresInMs: ONE_YEAR_MS,
+        });
+
         const cookieOptions = getSessionCookieOptions(ctx.req);
 
-        ctx.res.cookie(LOCAL_ADMIN_COOKIE_NAME, token, {
+        ctx.res.cookie(COOKIE_NAME, sessionToken, {
           ...cookieOptions,
-          httpOnly: true,
           maxAge: ONE_YEAR_MS,
         });
 
@@ -105,10 +88,7 @@ export const appRouter = router({
 
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(LOCAL_ADMIN_COOKIE_NAME, {
-        ...cookieOptions,
-        maxAge: -1,
-      });
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return {
         success: true,
       } as const;
@@ -129,18 +109,19 @@ export const appRouter = router({
         return db.getArticleBySlug(input.slug);
       }),
 
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         title: z.string().min(1, "Título é obrigatório"),
         slug: z.string().min(1, "Slug é obrigatório"),
         summary: z.string().min(1, "Resumo é obrigatório"),
         articleLink: z.string().url("Link deve ser uma URL válida").optional(),
         author: z.string().optional(),
+        submittedBy: z.string().min(1).optional(),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         return db.createArticle({
           ...input,
-          submittedBy: ctx.user.email || ctx.user.name,
+          submittedBy: input.submittedBy || "Visitante",
           status: "pending",
         });
       }),
@@ -192,18 +173,19 @@ export const appRouter = router({
         return db.getVideoById(input.id);
       }),
 
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         title: z.string().min(1, "Título é obrigatório"),
         description: z.string().optional(),
         url: z.string().url("URL deve ser válida"),
         thumbnail: z.string().optional(),
         duration: z.number().optional(),
+        submittedBy: z.string().min(1).optional(),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         return db.createVideo({
           ...input,
-          submittedBy: ctx.user.email || ctx.user.name,
+          submittedBy: input.submittedBy || "Visitante",
           status: "pending",
         });
       }),
@@ -255,16 +237,17 @@ export const appRouter = router({
         return db.getMindMapById(input.id);
       }),
 
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         title: z.string().min(1, "Título é obrigatório"),
         description: z.string().optional(),
         content: z.string().min(1, "Conteúdo é obrigatório"), // JSON string
+        submittedBy: z.string().min(1).optional(),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         return db.createMindMap({
           ...input,
-          submittedBy: ctx.user.email || ctx.user.name,
+          submittedBy: input.submittedBy || "Visitante",
           status: "pending",
         });
       }),
@@ -314,17 +297,18 @@ export const appRouter = router({
         return db.getQuizQuestionById(input.id);
       }),
 
-    create: protectedProcedure
+    create: publicProcedure
       .input(z.object({
         question: z.string().min(1, "Pergunta é obrigatória"),
         options: z.string().min(1, "Opções são obrigatórias"), // JSON array string
         correctAnswer: z.number().min(0, "Resposta correta deve ser um índice válido"),
         explanation: z.string().optional(),
+        submittedBy: z.string().min(1).optional(),
       }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         return db.createQuizQuestion({
           ...input,
-          submittedBy: ctx.user.email || ctx.user.name,
+          submittedBy: input.submittedBy || "Visitante",
           status: "pending",
         });
       }),

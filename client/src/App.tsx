@@ -12,6 +12,7 @@ import MindMaps from "./pages/MindMaps";
 import Quiz from "./pages/Quiz";
 import Admin from "./pages/Admin";
 import Login from "./pages/Login";
+import Submit from "./pages/Submit";
 
 function Router() {
   return (
@@ -22,6 +23,7 @@ function Router() {
       <Route path={"/mindmaps"} component={MindMaps} />
       <Route path={"/quiz"} component={Quiz} />
       <Route path={"/login"} component={Login} />
+      <Route path={"/enviar"} component={Submit} />
       <Route path={"/admin"} component={Admin} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
